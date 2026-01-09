@@ -145,3 +145,44 @@ def apply_rotary_pos_emb(q, k, cos, sin, unsqueeze_dim=1):
     k_embed = (k*cos.unsqueeze(unsqueeze_dim)) + \
         (rotate_half(k)*sin.unsqueeze(unsqueeze_dim))
     return q_embed, k_embed
+
+
+def repeat_kv(x: torch.Tensor, n_rep: int):
+    bs, slen, num_key_value_heads, head_dim = x.shape
+    if n_rep == 1:
+        return x
+# x[:, :, :, None, :]= x.unsqueeze(3)
+# shape=(bs, slen, num_key_value_heads, 1, head_dim)
+    return (x[:, :, :, None, :]
+            .expand(bs, slen, num_key_value_heads, n_rep, head_dim)
+            .reshape(bs, slen, num_key_value_heads*n_rep, head_dim)
+            )
+
+
+class Attention(nn.Module):
+    def __init__(self, args: MokioMindConfig):
+        super().__init__()
+
+        self.num_key_value_heads = (args.num_key_value_heads if args.num_key_value_heads is
+                                    not None else args.num_attention_heads)
+        assert args.hidden_size % args.num_attention_heads == 0, "hidden_size must be divisible by num_attention_heads"
+
+        self.n_local_heads = args.num_attention_heads
+        self.n_rep = self.n_local_heads // self.num_key_value_heads
+        self.head_dim = args.hidden_size // args.num_attention_heads
+
+        self.q_proj = nn.Linear(
+            args.hidden_size, args.num_attention_heads*self.head_dim, bias=False)
+        self.k_proj = nn.Linear(
+            args.hidden_size, self.num_key_value_heads*self.head_dim, bias=False)
+        self.v_proj = nn.Linear(
+            args.hidden_size, self.num_key_value_heads*self.head_dim, bias=False)
+        self.o_proj = nn.Linear(
+            args.num_attention_heads*self.head_dim, args.hidden_size, bias=False)
+
+        self.attn_dropout = nn.Dropout(args.dropout)
+        self.resid_dropout = nn.Dropout(args.dropout)
+        self.dropout = args.dropout
+
+        self.flash_attention = hasattr(
+            torch.nn.functional, "scaled_dot_product_attention") and args.flash_attention
