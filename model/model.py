@@ -1,6 +1,8 @@
+import math
 import torch.nn as nn
 import torch
 from transformers import PretrainedConfig
+from typing import Optional
 
 
 class MokioMindConfig(PretrainedConfig):
@@ -91,3 +93,55 @@ class RMSNorm(nn.Module):
 # forward
     def forward(self, x):
         return self.weight * self._norm(x.float()).type_as(x)*x
+
+
+# 写出ROPE的公式
+def precomput_feqs_cis(dim: int, end: int = int(32*1024), rope_base: float = 1e6,
+                       rope_scaling: Optional[dict] = None):
+    # 写出ROPE的公式
+    freqs = 1.0/rope_base**torch.arange(0, dim, 2)[:dim//2].float()/dim
+    # 计算inv_freq
+
+    if rope_scaling is not None:
+        orig_max, factor, beta_fast, beta_slow = (
+            rope_scaling.get("original_max_position_embeddings", 2048),
+            rope_scaling.get("factor", 4),
+            rope_scaling.get("beta_fast", 4),
+            rope_scaling.get("beta_slow", 1),
+        )
+
+        # 计算corr_dim
+        corr_dim = next((i for i in range(dim//2) if 2 *
+                        math.pi/freqs[i] > orig_max), dim//2)
+        # 计算power
+        power = torch.arange(
+            0, dim//2, device=freqs.device).float()/(max(1, dim//2-1))
+        # 计算beta
+        beta = beta_slow + (beta_fast - beta_slow)*power
+        # 计算scale
+        scale = torch.where(
+            torch.arange(0, dim//2, device=freqs.device) < corr_dim,
+            (beta*factor-beta+1)/beta*factor,
+            1.0/factor
+        )
+        # 应用scale
+        freqs = freqs*scale
+   # 生成位置索引
+    t = torch.arange(end, device=freqs.device)
+    freqs = torch.outer(t, freqs).float()
+ # 返回一个cos和sin
+    freqs_cos = torch.cat([torch.cos(freqs), torch.cos(freqs)], dim=-1)
+    freqs_sin = torch.cat([torch.sin(freqs), torch.sin(freqs)], dim=-1)
+    return freqs_cos, freqs_sin
+
+
+def apply_rotary_pos_emb(q, k, cos, sin, unsqueeze_dim=1):
+    # [a,b] => [-b,a]
+    def rotate_half(x):
+        return torch.cat([-x[..., x.shape[-1]//2:], x[..., :x.shape[-1]//2]], dim=-1)
+    # unsqueeze cos and sin
+    q_embed = (q*cos.unsequeeze(unsqueeze_dim)) + \
+        (rotate_half(q)*sin.unsqueeze(unsqueeze_dim))
+    k_embed = (k*cos.unsequeeze(unsqueeze_dim)) + \
+        (rotate_half(k)*sin.unsqueeze(unsqueeze_dim))
+    return q_embed, k_embed
