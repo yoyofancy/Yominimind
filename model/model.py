@@ -99,7 +99,7 @@ class RMSNorm(nn.Module):
 def precomput_feqs_cis(dim: int, end: int = int(32*1024), rope_base: float = 1e6,
                        rope_scaling: Optional[dict] = None):
     # 写出ROPE的公式
-    freqs = 1.0/rope_base**torch.arange(0, dim, 2)[:dim//2].float()/dim
+    freqs = 1.0/(rope_base**torch.arange(0, dim, 2)[:dim//2].float()/dim)
     # 计算inv_freq
 
     if rope_scaling is not None:
@@ -140,8 +140,8 @@ def apply_rotary_pos_emb(q, k, cos, sin, unsqueeze_dim=1):
     def rotate_half(x):
         return torch.cat([-x[..., x.shape[-1]//2:], x[..., :x.shape[-1]//2]], dim=-1)
     # unsqueeze cos and sin
-    q_embed = (q*cos.unsequeeze(unsqueeze_dim)) + \
+    q_embed = (q*cos.unsqueeze(unsqueeze_dim)) + \
         (rotate_half(q)*sin.unsqueeze(unsqueeze_dim))
-    k_embed = (k*cos.unsequeeze(unsqueeze_dim)) + \
+    k_embed = (k*cos.unsqueeze(unsqueeze_dim)) + \
         (rotate_half(k)*sin.unsqueeze(unsqueeze_dim))
     return q_embed, k_embed
