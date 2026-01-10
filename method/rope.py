@@ -41,7 +41,7 @@ print(result)
 
 # unsqueeze --- 在指定位置插入维度为1的维度
 t1 = torch.tensor([1, 2, 3, 4])
-t2 = t1.unsqueeze(0)
-print(t1.shape)
-print(t2.shape)
+t2 = t1.unsqueeze(0)  # 在第0维插入
+print(t1.shape)  # (4,)
+print(t2.shape)  # (1,4)
 print(t2)
